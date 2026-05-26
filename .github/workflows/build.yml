@@ -1,66 +1,14 @@
-name: build-release
+name: build
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up QEMU (for arm64 emulation)
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build & export rootfs tarballs (amd64, arm64)
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          for pair in "amd64:linux/amd64" "arm64:linux/arm64"; do
-            short="${pair%%:*}"
-            plat="${pair##*:}"
-            echo "==> Building $plat"
-            docker buildx build \
-              --platform "$plat" \
-              --file ./distro/Dockerfile \
-              --tag "wsl-fixer-distro:$short" \
-              --load \
-              ./distro
-            cid=$(docker create --platform "$plat" "wsl-fixer-distro:$short")
-            docker export "$cid" | gzip -9 > "dist/fixer-distro-$short.tar.gz"
-            docker rm "$cid"
-          done
-          ls -lh dist/
-
-      - name: Stage release files
-        run: |
-          set -euo pipefail
-          mkdir -p staging/wsl-fix-filesystem
-          cp dist/fixer-distro-amd64.tar.gz staging/wsl-fix-filesystem/
-          cp dist/fixer-distro-arm64.tar.gz staging/wsl-fix-filesystem/
-          cp fix-filesystem.ps1             staging/wsl-fix-filesystem/
-          cp README.md                      staging/wsl-fix-filesystem/ 2>/dev/null || true
-
-      - name: Create zip
-        run: |
-          cd staging
-          zip -r ../wsl-fix-filesystem.zip wsl-fix-filesystem
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: wsl-fix-filesystem
-          path: wsl-fix-filesystem.zip
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: wsl-fix-filesystem.zip
+  package:
+    uses: ./.github/workflows/package.yml
